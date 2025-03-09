@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weather Station (MQTT WebSockets)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin-top: 50px;
+      }
+      .container {
+        width: 300px;
+        margin: auto;
+        padding: 20px;
+        border: 2px solid #007bff;
+        border-radius: 10px;
+        background: #f4f4f4;
+      }
+      h2 {
+        color: #007bff;
+      }
+      .data {
+        font-size: 24px;
+        font-weight: bold;
+        color: #333;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>MQTT Weather Station</h2>
+    <div class="container">
+      <p>Temperature: <span id="temp" class="data">--</span> °C</p>
+      <p>Humidity: <span id="humidity" class="data">--</span> %</p>
+    </div>
+
+    <script>
+      // Connect to the MQTT Broker over WebSockets
+      const mqttClient = mqtt.connect("ws://157.173.101.159:9001");
+
+      mqttClient.on("connect", () => {
+        console.log("Connected to MQTT via WebSockets");
+        mqttClient.subscribe("/work_group_01/room_temp/temperature");
+        mqttClient.subscribe("/work_group_01/room_temp/humidity");
+      });
+
+      mqttClient.on("message", (topic, message) => {
+        console.log(`Received: ${topic} → ${message.toString()}`);
+
+        if (topic === "/work_group_01/room_temp/temperature") {
+          document.getElementById("temp").innerText = message.toString();
+        } else if (topic === "/work_group_01/room_temp/humidity") {
+          document.getElementById("humidity").innerText = message.toString();
+        }
+      });
+    </script>
+  </body>
+</html>
