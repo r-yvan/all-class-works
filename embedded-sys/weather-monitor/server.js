@@ -1,133 +1,126 @@
-// server.js
-const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
-const bodyParser = require('body-parser');
-const path = require('path');
+const express = require("express");
+const sqlite3 = require("sqlite3").verbose();
+const bodyParser = require("body-parser");
+const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, "public")));
 
-// Database initialization
-const db = new sqlite3.Database('./weather_data.db', (err) => {
+const db = new sqlite3.Database("./data.db", (err) => {
   if (err) {
-    console.error('Error opening database', err);
+    console.error("Error opening database", err);
   } else {
-    console.log('Connected to SQLite database');
+    console.log("Connected to SQLite database");
     createTables();
   }
 });
 
 function createTables() {
-  // Create tables if they don't exist
-  db.run(`CREATE TABLE IF NOT EXISTS raw_data (
+  db.run(`CREATE TABLE IF NOT EXISTS raw-data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL,
     value REAL NOT NULL,
     timestamp TEXT NOT NULL
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS avg_data (
+  db.run(`CREATE TABLE IF NOT EXISTS average-data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     avg_temperature REAL,
     avg_humidity REAL,
     timestamp TEXT NOT NULL
   )`);
-  
-  console.log('Database tables created or already exist');
-  
-  // Calculate averages immediately to have initial data
+
+  console.log("Database tables created or already exist");
   calculateAndStoreAverages();
 }
 
-// Track the latest values to calculate averages without waiting for both values
 let latestTemp = null;
 let latestHumidity = null;
 let lastAverageTime = null;
 
-// API Routes
-// Store incoming MQTT data
-app.post('/api/weather/data', (req, res) => {
+app.post("/api/weather/data", (req, res) => {
   const { type, value, timestamp } = req.body;
-  
+
   if (!type || value === undefined || !timestamp) {
-    return res.status(400).json({ error: 'Missing required fields' });
+    return res.status(400).json({ error: "Missing required fields" });
   }
-  
-  // Update latest values
-  if (type === 'temperature') {
+
+  if (type === "temperature") {
     latestTemp = value;
-  } else if (type === 'humidity') {
+  } else if (type === "humidity") {
     latestHumidity = value;
   }
-  
+
   db.run(
-    'INSERT INTO raw_data (type, value, timestamp) VALUES (?, ?, ?)',
+    "INSERT INTO raw-data (type, value, timestamp) VALUES (?, ?, ?)",
     [type, value, timestamp],
-    function(err) {
+    function (err) {
       if (err) {
-        console.error('Error storing data:', err);
-        return res.status(500).json({ error: 'Failed to store data' });
+        console.error("Error storing data:", err);
+        return res.status(500).json({ error: "Failed to store data" });
       }
-      
-      res.status(201).json({ 
-        message: 'Data stored successfully',
-        id: this.lastID
+
+      res.status(201).json({
+        message: "Data stored successfully",
+        id: this.lastID,
       });
     }
   );
 });
 
-// Calculate 5-minute averages and store them
 function calculateAndStoreAverages() {
   const currentTime = new Date();
-  
-  // If we've already calculated averages in the last 4 minutes, don't recalculate
-  if (lastAverageTime && (currentTime - lastAverageTime < 4 * 60 * 1000)) {
+
+  if (lastAverageTime && currentTime - lastAverageTime < 4 * 60 * 1000) {
     return;
   }
-  
+
   const fiveMinutesAgo = new Date(currentTime - 5 * 60 * 1000).toISOString();
   const currentTimeISO = currentTime.toISOString();
-  
-  // Calculate average temperature
+
   db.get(
     `SELECT AVG(value) as avg_value 
-     FROM raw_data 
+     FROM raw-data 
      WHERE type = 'temperature' AND timestamp > ? AND timestamp <= ?`,
     [fiveMinutesAgo, currentTimeISO],
     (err, tempResult) => {
       if (err) {
-        return console.error('Error calculating average temperature:', err);
+        return console.error("Error calculating average temperature:", err);
       }
-      
-      // Calculate average humidity
+
       db.get(
-        `SELECT AVG(value) as avg_value 
-         FROM raw_data 
+        `SELECT AVG(value) as average-value 
+         FROM raw-data 
          WHERE type = 'humidity' AND timestamp > ? AND timestamp <= ?`,
         [fiveMinutesAgo, currentTimeISO],
         (err, humidityResult) => {
           if (err) {
-            return console.error('Error calculating average humidity:', err);
+            return console.error("Error calculating average humidity:", err);
           }
-          
-          // Use latest values if no data in the time range
-          const avgTemp = tempResult && tempResult.avg_value ? tempResult.avg_value : latestTemp;
-          const avgHumidity = humidityResult && humidityResult.avg_value ? humidityResult.avg_value : latestHumidity;
-          
-          // Only store if we have data
+
+          const avgTemp =
+            tempResult && tempResult.avg_value
+              ? tempResult.avg_value
+              : latestTemp;
+          const avgHumidity =
+            humidityResult && humidityResult.avg_value
+              ? humidityResult.avg_value
+              : latestHumidity;
+
           if (avgTemp !== null || avgHumidity !== null) {
             db.run(
-              'INSERT INTO avg_data (avg_temperature, avg_humidity, timestamp) VALUES (?, ?, ?)',
+              "INSERT INTO average-data (avg_temperature, avg_humidity, timestamp) VALUES (?, ?, ?)",
               [avgTemp, avgHumidity, currentTimeISO],
-              function(err) {
+              function (err) {
                 if (err) {
-                  console.error('Error storing average data:', err);
+                  console.error("Error storing average data:", err);
                 } else {
-                  console.log('Stored 5-minute averages successfully at', new Date().toLocaleTimeString());
+                  console.log(
+                    "Stored 5-minute averages successfully at",
+                    new Date().toLocaleTimeString()
+                  );
                   lastAverageTime = currentTime;
                 }
               }
@@ -139,31 +132,28 @@ function calculateAndStoreAverages() {
   );
 }
 
-// Get historical averaged data for the chart
-app.get('/api/weather/history', (req, res) => {
-  // Get the last 12 entries (1 hour of data with 5-minute intervals)
+app.get("/api/weather/history", (req, res) => {
   db.all(
     `SELECT avg_temperature, avg_humidity, timestamp 
-     FROM avg_data 
+     FROM average-data 
      ORDER BY timestamp DESC 
      LIMIT 12`,
     (err, rows) => {
       if (err) {
-        console.error('Error fetching historical data:', err);
-        return res.status(500).json({ error: 'Failed to fetch historical data' });
+        console.error("Error fetching historical data:", err);
+        return res
+          .status(500)
+          .json({ error: "Failed to fetch historical data" });
       }
-      
-      // Return the data in chronological order
+
       res.json(rows.reverse());
     }
   );
 });
 
-// Calculate 5-minute averages more frequently to ensure we have data
 setInterval(calculateAndStoreAverages, 60 * 1000); // Check every minute
 
-// Database Viewer Routes
-app.get('/db-viewer', (req, res) => {
+app.get("/db-viewer", (req, res) => {
   res.send(`
     <!DOCTYPE html>
     <html>
@@ -195,17 +185,19 @@ app.get('/db-viewer', (req, res) => {
 });
 
 // View raw_data table
-app.get('/db-viewer/raw-data', (req, res) => {
-  db.all('SELECT * FROM raw_data ORDER BY timestamp DESC LIMIT 100', (err, rows) => {
-    if (err) {
-      return res.status(500).send('Error fetching data: ' + err.message);
-    }
-    
-    let html = `
+app.get("/db-viewer/raw-data", (req, res) => {
+  db.all(
+    "SELECT * FROM raw-data ORDER BY timestamp DESC LIMIT 100",
+    (err, rows) => {
+      if (err) {
+        return res.status(500).send("Error fetching data: " + err.message);
+      }
+
+      let html = `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>raw_data Table</title>
+      <title>Raw Data Table</title>
       <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         h1, h2 { color: #333; }
@@ -226,31 +218,29 @@ app.get('/db-viewer/raw-data', (req, res) => {
         <h1>raw_data Table</h1>
         <p>Showing latest 100 records (auto-refreshes every 30 seconds)</p>
     `;
-    
-    if (rows.length === 0) {
-      html += '<p>No data found in this table.</p>';
-    } else {
-      html += '<table><tr>';
-      
-      // Table headers
-      Object.keys(rows[0]).forEach(key => {
-        html += `<th>${key}</th>`;
-      });
-      html += '</tr>';
-      
-      // Table data
-      rows.forEach(row => {
-        html += '<tr>';
-        Object.values(row).forEach(value => {
-          html += `<td>${value}</td>`;
+
+      if (rows.length === 0) {
+        html += "<p>No data found in this table.</p>";
+      } else {
+        html += "<table><tr>";
+
+        Object.keys(rows[0]).forEach((key) => {
+          html += `<th>${key}</th>`;
         });
-        html += '</tr>';
-      });
-      
-      html += '</table>';
-    }
-    
-    html += `
+        html += "</tr>";
+
+        rows.forEach((row) => {
+          html += "<tr>";
+          Object.values(row).forEach((value) => {
+            html += `<td>${value}</td>`;
+          });
+          html += "</tr>";
+        });
+
+        html += "</table>";
+      }
+
+      html += `
         <div class="nav">
           <a href="/db-viewer">← Back to Tables</a>
         </div>
@@ -258,23 +248,25 @@ app.get('/db-viewer/raw-data', (req, res) => {
     </body>
     </html>
     `;
-    
-    res.send(html);
-  });
+
+      res.send(html);
+    }
+  );
 });
 
-// View avg_data table
-app.get('/db-viewer/avg-data', (req, res) => {
-  db.all('SELECT * FROM avg_data ORDER BY timestamp DESC LIMIT 100', (err, rows) => {
-    if (err) {
-      return res.status(500).send('Error fetching data: ' + err.message);
-    }
-    
-    let html = `
+app.get("/db-viewer/average-data", (req, res) => {
+  db.all(
+    "SELECT * FROM average-data ORDER BY timestamp DESC LIMIT 100",
+    (err, rows) => {
+      if (err) {
+        return res.status(500).send("Error fetching data: " + err.message);
+      }
+
+      let html = `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>avg_data Table</title>
+      <title>Average Data Table</title>
       <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         h1, h2 { color: #333; }
@@ -295,31 +287,29 @@ app.get('/db-viewer/avg-data', (req, res) => {
         <h1>avg_data Table</h1>
         <p>Showing latest 100 records (auto-refreshes every 30 seconds)</p>
     `;
-    
-    if (rows.length === 0) {
-      html += '<p>No data found in this table.</p>';
-    } else {
-      html += '<table><tr>';
-      
-      // Table headers
-      Object.keys(rows[0]).forEach(key => {
-        html += `<th>${key}</th>`;
-      });
-      html += '</tr>';
-      
-      // Table data
-      rows.forEach(row => {
-        html += '<tr>';
-        Object.values(row).forEach(value => {
-          html += `<td>${value}</td>`;
+
+      if (rows.length === 0) {
+        html += "<p>No data found in this table.</p>";
+      } else {
+        html += "<table><tr>";
+
+        Object.keys(rows[0]).forEach((key) => {
+          html += `<th>${key}</th>`;
         });
-        html += '</tr>';
-      });
-      
-      html += '</table>';
-    }
-    
-    html += `
+        html += "</tr>";
+
+        rows.forEach((row) => {
+          html += "<tr>";
+          Object.values(row).forEach((value) => {
+            html += `<td>${value}</td>`;
+          });
+          html += "</tr>";
+        });
+
+        html += "</table>";
+      }
+
+      html += `
         <div class="nav">
           <a href="/db-viewer">← Back to Tables</a>
         </div>
@@ -327,17 +317,16 @@ app.get('/db-viewer/avg-data', (req, res) => {
     </body>
     </html>
     `;
-    
-    res.send(html);
-  });
+
+      res.send(html);
+    }
+  );
 });
 
-// Serve index.html
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// Start the server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
