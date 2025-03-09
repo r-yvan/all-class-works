@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Station</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.1.3/axios.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+        
+        :root {
+            --primary-color: #6C5CE7;
+            --secondary-color: #00CEC9;
+            --accent-color: #FAB1A0;
+            --bg-dark: #2D3436;
+            --bg-light: #636E72;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --text-primary: #FFFFFF;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: var(--bg-dark);
+            background-image: linear-gradient(45deg, rgba(108, 92, 231, 0.1), rgba(0, 206, 201, 0.1));
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        .dashboard {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 15px;
+        }
+        
+        .title-section {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .title-section h1 {
+            font-size: 2.2rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .title-section p {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin-top: 10px;
+        }
+        
+        .main-container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        
+        .glass-panel {
+            background: var(--card-bg);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .metrics-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        
+        .metric-card {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 25px;
+            position: relative;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 25px rgba(0, 0, 0, 0.2);
+        }
+        
+        .metric-card.temperature {
+            background: linear-gradient(135deg, rgba(250, 177, 160, 0.1), rgba(255, 107, 107, 0.1));
+        }
+        
+        .metric-card.humidity {
+            background: linear-gradient(135deg, rgba(0, 206, 201, 0.1), rgba(72, 219, 251, 0.1));
+        }
+        
+        .metric-icon {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 1.8rem;
+            color: var(--text-secondary);
+        }
+        
+        .metric-label {
+            font-size: 1.1rem;
+            font-weight: 300;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .metric-value {
+            font-size: 3rem;
+            font-weight: 600;
+            margin: 15px 0;
+            color: var(--text-primary);
+        }
+        
+        .metric-unit {
+            font-size: 1.3rem;
+            vertical-align: super;
+            margin-left: 5px;
+            color: var(--text-secondary);
+        }
+        
+        .metric-average {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+        
+        .chart-section {
+            padding: 20px 0;
+        }
+        
+        .chart-container {
+            height: 380px;
+            width: 100%;
+        }
+        
+        .section-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 20px;
+        }
+        
+        .status-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            padding: 0 5px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .status-icon {
+            margin-right: 6px;
+            font-size: 0.9rem;
+        }
+        
+        .status-value {
+            font-weight: 400;
+            color: var(--text-primary);
+            margin-left: 4px;
+        }
+        
+        .pulse {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00FF7F;
+            margin-right: 8px;
+            animation: pulse 1.8s infinite;
+        }
+        
+        .pulse.error {
+            background: #FF3030;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(0, 255, 127, 0.7); }
+            70% { box-shadow: 0 0 0 8px rgba(0, 255, 127, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 255, 127, 0); }
+        }
+
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            color: var(--secondary-color);
+            font-size: 0.75rem;
+            position: absolute;
+            top: 15px;
+            right: 15px;
+        }
+
+        .live-dot {
+            width: 6px;
+            height: 6px;
+            background-color: var(--secondary-color);
+            border-radius: 50%;
+            margin-right: 4px;
+            animation: blink 1.2s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard {
+                margin: 15px;
+                padding: 10px;
+            }
+            
+            .metric-value {
+                font-size: 2.5rem;
+            }
+            
+            .chart-container {
+                height: 280px;
+            }
+            
+            .title-section h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="title-section">
+            <h1>ATMOSPHERIC MONITOR</h1>
+            <p>Real-time MQTT Weather Station Dashboard</p>
+        </div>
+        
+        <div class="main-container">
+            <div class="glass-panel">
+                <div class="chart-section">
+                    <h2 class="section-title">Environmental Trends</h2>
+                    <div class="chart-container">
+                        <canvas id="weatherChart"></canvas>
+                    </div>
+                    
+                    <div class="status-section">
+                        <div class="status-item">
+                            <div id="db-pulse" class="pulse"></div>
+                            <i class="fas fa-database status-icon"></i>
+                            Database: <span id="db-status" class="status-value">Waiting for data...</span>
+                        </div>
+                        <div class="status-item">
+                            <i class="fas fa-sync-alt status-icon"></i>
+                            Last update: <span id="last-update" class="status-value">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="metrics-container">
+                <div class="metric-card temperature">
+                    <i class="fas fa-temperature-high metric-icon"></i>
+                    <div class="metric-label">Temperature</div>
+                    <div class="metric-value"><span id="temp">--</span><span class="metric-unit">°C</span></div>
+                    <div class="metric-average">
+                        <i class="fas fa-clock"></i> 5min avg: <span id="avg-temp">--</span>°C
+                    </div>
+                    <div class="live-indicator">
+                        <div class="live-dot"></div> LIVE
+                    </div>
+                </div>
+                
+                <div class="metric-card humidity">
+                    <i class="fas fa-tint metric-icon"></i>
+                    <div class="metric-label">Humidity</div>
+                    <div class="metric-value"><span id="humidity">--</span><span class="metric-unit">%</span></div>
+                    <div class="metric-average">
+                        <i class="fas fa-clock"></i> 5min avg: <span id="avg-humidity">--</span>%
+                    </div>
+                    <div class="live-indicator">
+                        <div class="live-dot"></div> LIVE
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Initialize chart with custom styling
+        const ctx = document.getElementById('weatherChart').getContext('2d');
+        Chart.defaults.color = 'rgba(255, 255, 255, 0.7)';
+        Chart.defaults.font.family = "'Poppins', sans-serif";
+        
+        const weatherChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Temperature (°C)',
+                        borderColor: '#ff7e5f',
+                        backgroundColor: 'rgba(255, 126, 95, 0.2)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#ff7e5f',
+                        pointBorderColor: 'rgba(255, 255, 255, 0.8)',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        tension: 0.4,
+                        data: [],
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Humidity (%)',
+                        borderColor: '#00f2fe',
+                        backgroundColor: 'rgba(0, 242, 254, 0.2)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#00f2fe',
+                        pointBorderColor: 'rgba(255, 255, 255, 0.8)',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        tension: 0.4,
+                        data: [],
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                        titleFont: {
+                            size: 13
+                        },
+                        bodyFont: {
+                            size: 13
+                        },
+                        padding: 10,
+                        cornerRadius: 8,
+                        displayColors: true
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)',
+                            borderColor: 'rgba(255, 255, 255, 0.2)'
+                        },
+                        ticks: {
+                            font: {
+                                size: 11
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Time',
+                            font: {
+                                size: 13
+                            }
+                        }
+                    },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: 'Temperature (°C)',
+                            font: {
+                                size: 13
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)',
+                            borderColor: 'rgba(255, 255, 255, 0.2)'
+                        },
+                        min: 0,
+                        max: 50
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'Humidity (%)',
+                            font: {
+                                size: 13
+                            }
+                        },
+                        min: 0,
+                        max: 100,
+                        grid: {
+                            drawOnChartArea: false,
+                            borderColor: 'rgba(255, 255, 255, 0.2)'
+                        }
+                    }
+                },
+                animations: {
+                    tension: {
+                        duration: 1000,
+                        easing: 'linear'
+                    }
+                }
+            }
+        });
+
+        // Rolling window settings (e.g., show last 30 minutes of data)
+        const MAX_DATA_POINTS = 180; // Approx 30 minutes if data comes every 10 seconds
+        let temperatureData = [];
+        let humidityData = [];
+        let labels = [];
+
+        // Function to update chart in real-time
+        function updateChartRealTime(timestamp, temperature, humidity) {
+            const timeLabel = new Date(timestamp).toLocaleTimeString();
+
+            // Add new data
+            labels.push(timeLabel);
+            temperatureData.push(temperature);
+            humidityData.push(humidity);
+
+            // Remove old data if exceeding max points
+            if (labels.length > MAX_DATA_POINTS) {
+                labels.shift();
+                temperatureData.shift();
+                humidityData.shift();
+            }
+
+            // Update chart data
+            weatherChart.data.labels = labels;
+            weatherChart.data.datasets[0].data = temperatureData;
+            weatherChart.data.datasets[1].data = humidityData;
+
+            // Update last update time
+            document.getElementById("last-update").innerText = timeLabel;
+
+            // Smooth chart update
+            weatherChart.update('none'); // 'none' for no animation on every update
+        }
+
+        // Check for most recent data immediately
+        function fetchCurrentReadings() {
+            axios.get('/api/weather/current')
+                .then(response => {
+                    const data = response.data;
+                    if (data) {
+                        if (data.temperature !== undefined) {
+                            document.getElementById("temp").innerText = data.temperature.toFixed(1);
+                        }
+                        if (data.humidity !== undefined) {
+                            document.getElementById("humidity").innerText = data.humidity.toFixed(1);
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching current readings:', error);
+                });
+        }
+
+        // Function to update historical averages (5-minute)
+        function updateHistoricalAverages() {
+            axios.get('/api/weather/history')
+                .then(response => {
+                    const data = response.data;
+                    
+                    if (data.length > 0) {
+                        document.getElementById("db-status").textContent = "Connected, storing data";
+                        document.getElementById("db-status").style.color = "#00FF7F";
+                        document.getElementById("db-pulse").classList.remove("error");
+
+                        const latest = data[data.length - 1];
+                        document.getElementById("avg-temp").innerText = latest.avg_temperature !== null ? latest.avg_temperature.toFixed(1) : "--";
+                        document.getElementById("avg-humidity").innerText = latest.avg_humidity !== null ? latest.avg_humidity.toFixed(1) : "--";
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching historical data:', error);
+                    document.getElementById("db-status").textContent = "Error connecting to database";
+                    document.getElementById("db-status").style.color = "#FF3030";
+                    document.getElementById("db-pulse").classList.add("error");
+                });
+        }
+
+        // Connect to the MQTT Broker over WebSockets
+        const mqttClient = mqtt.connect('ws://157.173.101.159:9001');
+
+        mqttClient.on('connect', () => {
+            console.log("Connected to MQTT via WebSockets");
+            mqttClient.subscribe("/work_group_01/room_temp/temperature");
+            mqttClient.subscribe("/work_group_01/room_temp/humidity");
+        });
+
+        mqttClient.on('message', (topic, message) => {
+            console.log(`Received: ${topic} → ${message.toString()}`);
+            const value = parseFloat(message.toString());
+            const timestamp = new Date().toISOString();
+
+            // Update the display with animation and chart
+            if (topic === "/work_group_01/room_temp/temperature") {
+                const tempElement = document.getElementById("temp");
+                const currentTemp = parseFloat(tempElement.innerText) || 0;
+                animateValue(tempElement, currentTemp, value, 1000);
+                
+                // Update chart in real-time
+                updateChartRealTime(timestamp, value, humidityData.length > 0 ? humidityData[humidityData.length - 1] : null);
+                
+                // Send to backend to store in SQLite
+                axios.post('/api/weather/data', {
+                    type: 'temperature',
+                    value: value,
+                    timestamp: timestamp
+                }).catch(error => console.error('Error storing temperature:', error));
+                
+            } else if (topic === "/work_group_01/room_temp/humidity") {
+                const humidityElement = document.getElementById("humidity");
+                const currentHumidity = parseFloat(humidityElement.innerText) || 0;
+                animateValue(humidityElement, currentHumidity, value, 1000);
+                
+                // Update chart in real-time
+                updateChartRealTime(timestamp, temperatureData.length > 0 ? temperatureData[temperatureData.length - 1] : null, value);
+                
+                // Send to backend to store in SQLite
+                axios.post('/api/weather/data', {
+                    type: 'humidity',
+                    value: value,
+                    timestamp: timestamp
+                }).catch(error => console.error('Error storing humidity:', error));
+            }
+        });
+
+        // Animate value change function
+        function animateValue(element, start, end, duration) {
+            if (isNaN(start)) start = 0;
+            if (isNaN(end)) return;
+            
+            const range = end - start;
+            let current = start;
+            const increment = end > start ? 0.1 : -0.1;
+            const stepTime = Math.abs(Math.floor(duration / (range / increment)));
+            
+            const timer = setInterval(function() {
+                current += increment;
+                element.innerText = current.toFixed(1);
+                
+                if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
+                    element.innerText = end.toFixed(1);
+                    clearInterval(timer);
+                }
+            }, stepTime);
+        }
+
+        // Fetch current readings on load
+        fetchCurrentReadings();
+
+        // Update historical averages periodically
+        updateHistoricalAverages(); // Initial load
+        setInterval(updateHistoricalAverages, 30000); // Every 30 seconds
+    </script>
+</body>
+</html>
